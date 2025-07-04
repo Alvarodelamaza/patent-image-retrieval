@@ -1,0 +1,19 @@
+.PHONY: initialize_git install activate
+
+initialize_git:
+	@echo "🚀 Initializing git..."
+	git init --initial-branch=main
+
+install: ## Install the poetry environment
+	@echo "🚀 Creating virtual environment using pyenv and poetry"
+	poetry install
+	@echo "🚀 Set up git hook scripts"
+	poetry run pre-commit install
+	@echo "🚀 Set up gitmoji hook"
+	gitmoji -i
+
+activate:
+	@echo "Activating virtual environment"
+	poetry shell
+
+setup: initialize_git install
