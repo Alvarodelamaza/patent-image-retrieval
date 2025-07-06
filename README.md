@@ -52,11 +52,10 @@ python train.py --method <method_name>
 ```
 
 Replace `<method_name>` with one of the available approaches, such as:
-- `clip`
-- `clip_ft`
-- `clip_graph`
-- `clip_hyperbolic`
-- `clip_graph_hyp`  
+- `train_class_pro`
+- `plot`
+- `train_hyp`
+
 (Refer to the `train.py` file for all options.)
 
 ---
