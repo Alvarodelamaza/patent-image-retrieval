@@ -163,30 +163,5 @@ def process_patent_graph(path="../data/2018/graph", processed_data_dir="../data/
     A, edge_index, X = load_patent_graph(path)
     print("Data Loaded")
 
-    # Process the graph (replace with your actual processing logic)
-    #(
-    #    train_edge_index,
-    #    val_edges,
-    #    test_edges,
-    #    val_non_edges,
-    #    test_non_edges,
-    #) = remove_edges_and_sample_optimized(edge_index, A.shape[1])
-    #print("Data splited in train/val/test sets")
-
-    #num_nodes = A.shape[0]
-    #train_edge_index = train_edge_index.to(torch.int64)
-    #train_adj_matrix = to_dense_adj(train_edge_index, max_num_nodes=num_nodes)[0]
-
-    #A_tilde_train = normalize_adjacency_dense_gpu(
-    #    train_adj_matrix.to(torch.float32)
-    #)  # Normalize
-
-    # Save processed results
-    #torch.save(X, processed_X_path)
-    #torch.save(A_tilde_train, processed_A_tilde_train_path)
-    #np.save(processed_val_edges_path, val_edges)
-    #np.save(processed_test_edges_path, test_edges)
-    #np.save(processed_val_non_edges_path, val_non_edges)
-    #np.save(processed_test_non_edges_path, test_non_edges)
 
     return (X, A_tilde_train) #val_edges, test_edges, val_non_edges, test_non_edges)

@@ -396,30 +396,19 @@ def sample_to_prototype_loss(fig_emb, pos_label_emb, neg_label_emb, k):
     batch_size = fig_emb.shape[0]
     num_neg = neg_label_emb.shape[0] // batch_size
 
-    # Calculate distances
-    # Positive distances: d(fig, pos_label)
     dist_pos = pmath.dist(fig_emb, pos_label_emb, k=k)  # Shape: (batch_size,)
 
-    # Negative distances: d(fig, neg_label)
-    # Reshape fig_emb to match neg_label_emb for batched distance calculation
     fig_emb_rep = fig_emb.repeat_interleave(num_neg, dim=0)  # Shape: (batch_size * num_neg, embed_dim)
     dist_neg = pmath.dist(fig_emb_rep, neg_label_emb, k=k)  # Shape: (batch_size * num_neg,)
     dist_neg = dist_neg.view(batch_size, num_neg)  # Shape: (batch_size, num_neg)
 
-    # The "logits" for the cross-entropy loss are the negative distances.
-    # A smaller distance (better match) means a larger (less negative) logit.
     logits_pos = -dist_pos.unsqueeze(1)  # Shape: (batch_size, 1)
     logits_neg = -dist_neg  # Shape: (batch_size, num_neg)
 
-    # Concatenate positive and negative logits
-    # For each sample, the first logit corresponds to the positive pair,
-    # and the rest correspond to negative pairs.
     all_logits = torch.cat([logits_pos, logits_neg], dim=1)  # Shape: (batch_size, 1 + num_neg)
 
-    # The target class for each sample is 0, as the 0-th logit is the positive one.
     targets = torch.zeros(batch_size, dtype=torch.long, device=fig_emb.device)
 
-    # Calculate cross-entropy loss. This internally handles log-sum-exp for stability.
     loss = F.cross_entropy(all_logits, targets)
 
     return loss
@@ -836,24 +825,14 @@ def extract_mappings_from_adjacency_matrix(
     
     print(f"Extracted {len(figure_to_patent)} figure-to-patent mappings")
     print(f"Found {len(patent_set)} unique patents")
-    
-    # Assign labels to patents based on adjacency matrix
-    # This is a simplified approach - you may need to customize based on your data
-    
-    # Method 1: Assign each patent to a random label
-    # patent_to_label = {patent: random.randint(0, num_labels-1) for patent in patent_set}
-    
-    # Method 2: Assign patents to labels based on some pattern in the patent ID
-    # For example, using the first character of the patent ID modulo number of labels
+
     patent_to_label = {}
     for patent in patent_set:
         # Simple hash function to assign patents to labels
         label_idx = sum(ord(c) for c in patent) % num_labels
         patent_to_label[patent] = label_idx
     
-    # Method 3: If you have ground truth patent-to-label mappings, load them here
-    # with open('path/to/ground_truth_patent_labels.json', 'r') as f:
-    #     patent_to_label = json.load(f)
+
     
     print(f"Created {len(patent_to_label)} patent-to-label mappings")
     
@@ -947,7 +926,7 @@ def build_complete_data_pipeline(
                 # Add all other figures from the same patent as positives
                 figure_to_pos_figures[figure].extend([f for f in figures if f != figure])
     
-    # Method 2 (optional): Use CLIP to find visually similar figures
+
     use_clip_for_similarity = False
     if use_clip_for_similarity:
         # Load CLIP model
@@ -1122,13 +1101,10 @@ def train_hyperbolic_retrieval_model(
     # Store temperature in model for cross-entropy loss
     model.temperature = temperature
 
-    # --- Data Preparation ---
     num_figures = X_figures.shape[0]
     num_labels = model.label_emb.shape[0]
     print(f"Model label_emb size (LABEL_NUM): {num_labels}")
-    # --- ---
 
-    # --- Calculate num_patents correctly (using absolute offsets for slicing later) 
     patent_start_idx_abs = label_offsets['patents']  # Absolute start index
     patent_end_idx_abs = num_labels + patent_start_idx_abs  # Default if no subsequent offset
     if 'medium_cpcs' in label_offsets:
@@ -1136,8 +1112,7 @@ def train_hyperbolic_retrieval_model(
     # ... (add other elif checks if needed) ...
     num_patents = patent_end_idx_abs - patent_start_idx_abs
     print(f"Derived num_patents: {num_patents} (Absolute index range {patent_start_idx_abs} to {patent_end_idx_abs-1})")
-    
-    # --- Process figure-to-figure pairs ---
+ 
     has_figure_pairs = (positive_figure_pairs is not None and len(positive_figure_pairs) > 0) and \
                        (negative_figure_pairs is not None and len(negative_figure_pairs) > 0)
     
@@ -1188,8 +1163,7 @@ def train_hyperbolic_retrieval_model(
 
     X_figures_tensor = torch.tensor(X_figures, dtype=torch.float32)
 
-    # ... (constraint tensor creation and chunking - uses relative indices now) ...
-    # Ensure implication/exclusion tensors loaded from npz also use relative indices
+ 
     implication_tensor = torch.tensor(implication, dtype=torch.long, device=device) if implication else torch.empty((0, 2), dtype=torch.long, device=device)
     exclusion_tensor = torch.tensor(exclusion, dtype=torch.long, device=device) if exclusion else torch.empty((0, 2), dtype=torch.long, device=device)
     # --- Add validation for implication/exclusion relative indices ---
@@ -1200,9 +1174,7 @@ def train_hyperbolic_retrieval_model(
         if min_imp_idx < 0 or max_imp_idx >= num_labels:
              print("ERROR: Invalid relative indices found in implication data!")
              # Handle error
-    # --- ---
-
-    # --- Prepare positive and negative pairs with CORRECTED VALIDATION ---
+ 
     figure_to_pos_patent = {}
     figure_to_neg_patents = {}
     all_figure_indices_with_pairs = set()
@@ -1220,14 +1192,12 @@ def train_hyperbolic_retrieval_model(
         if not (0 <= fig_idx < num_figures):
             pos_pairs_skipped_fig_idx += 1
             continue
-        # --- CORRECTED CHECK for relative patent index ---
-        # Check if patent_idx_relative is within the valid range [0, num_labels - 1]
+     
         if not (0 <= patent_idx_relative < num_labels):
             print(f"Warning: Invalid relative patent index {patent_idx_relative} (range 0-{num_labels-1}) found in Y_pos for figure {fig_idx}. Skipping.")
             pos_pairs_skipped_pat_idx += 1
             continue
-        # --- Optional: Check if it falls within the expected patent sub-range ---
-        # This requires knowing the relative start/end for patents
+
         patent_start_idx_rel = 0  # Patents are the first labels
         patent_end_idx_rel = num_patents
         if not (patent_start_idx_rel <= patent_idx_relative < patent_end_idx_rel):
@@ -1249,19 +1219,16 @@ def train_hyperbolic_retrieval_model(
         if not (0 <= fig_idx < num_figures):
             neg_pairs_skipped_fig_idx += 1
             continue
-        # --- CORRECTED CHECK for relative patent index ---
-        # Check if patent_idx_relative is within the valid range [0, num_labels - 1]
+        
         if not (0 <= patent_idx_relative < num_labels):
             print(f"Warning: Invalid relative patent index {patent_idx_relative} (range 0-{num_labels-1}) found in Y_neg for figure {fig_idx}. Skipping.")
             neg_pairs_skipped_pat_idx += 1
             continue
-        # --- Optional: Check if it falls within the expected patent sub-range ---
         patent_start_idx_rel = 0
         patent_end_idx_rel = num_patents
         if not (patent_start_idx_rel <= patent_idx_relative < patent_end_idx_rel):
              print(f"Note: Y_neg relative patent index {patent_idx_relative} is outside expected patent range [0-{patent_end_idx_rel-1}] but within label range [0-{num_labels-1}]. Accepting.")
-             # Decide if this is acceptable or an error
-        # --- ---
+  
 
         if fig_idx not in figure_to_neg_patents:
             figure_to_neg_patents[fig_idx] = []
@@ -1571,8 +1538,7 @@ def train_hyperbolic_retrieval_model(
             label_val_reg, instance_val_reg = model.calculate_reg_loss(encoded_figures_val)
             reg_val_loss = label_val_reg + instance_val_reg
 
-            # --- Retrieval Loss ---
-            # Get corresponding label embeddings
+   
             pos_label_emb = model.label_emb[batch_pos_pat]
             neg_label_emb = model.label_emb[batch_neg_pat]
             
@@ -1582,7 +1548,6 @@ def train_hyperbolic_retrieval_model(
             
             
 
-            # --- Figure-to-Figure Cross-Entropy Loss ---
             figure_pair_val_loss = torch.tensor(0.0, device=device)
             if has_figure_pairs and batch_pos_fig_pairs is not None and batch_neg_fig_pairs is not None:
                 if batch_pos_fig_pairs.size(0) > 0 and batch_neg_fig_pairs.size(0) > 0:
@@ -1701,7 +1666,7 @@ def train_hyperbolic_retrieval_model(
         batch_neg_fig_pairs = torch.tensor(batch_neg_fig_pairs, dtype=torch.long, device=device)
         optimizer.zero_grad()
 
-        # --- Forward Pass ---
+
         # Encode figures
         encoded_figures = model.encode_figures(batch_x)
     
@@ -2175,11 +2140,7 @@ def train_hyperbolic_retrieval_model_old(
                     batch_pos_pat_indices.append(pos_pat)
                     batch_neg_pat_indices.extend(neg_pats)
                     valid_batch_indices.append(fig_idx)
-                # else:
-                #     # Optional: Print why a figure was skipped
-                #     # print(f"Skipping fig {fig_idx}: has_pos={has_pos}, has_negs={has_negs}, enough_negs={enough_negs}")
-                #     pass
-
+               
             if not valid_batch_indices:
                 # print(f"Batch starting at index {i} is empty, skipping.") # Optional: Print empty batches
                 continue # Skip if batch is empty
@@ -2190,11 +2151,11 @@ def train_hyperbolic_retrieval_model_old(
                 batch_pos_pat = torch.tensor(batch_pos_pat_indices, dtype=torch.long, device=device)
                 batch_neg_pat = torch.tensor(batch_neg_pat_indices, dtype=torch.long, device=device)
 
-                # --- DIAGNOSTIC PRINT ---
+                #
                 if batches_yielded == 0 and i == 0: # Print only for the very first batch
                     print(f"  First batch details: Num valid figures: {len(valid_batch_indices)}, "
                         f"X shape: {batch_x.shape}, Pos shape: {batch_pos_pat.shape}, Neg shape: {batch_neg_pat.shape}")
-                # --- END DIAGNOSTIC ---
+            
 
                 yield batch_x, batch_pos_pat, batch_neg_pat
                 batches_yielded += 1
@@ -2243,9 +2204,7 @@ def train_hyperbolic_retrieval_model_old(
             inside_loss_total = torch.tensor(0.0, device=device)
             disjoint_loss_total = torch.tensor(0.0, device=device)
             if implication_chunks or exclusion_chunks:
-                 # Detach label embeddings if HMI functions are complex/unstable?
-                 # Or calculate only once per epoch if stable?
-                 # For now, calculate per batch using chunks
+            
                  current_label_emb = model.label_emb # Use current embeddings
                  for imp_chunk in implication_chunks:
                      i_loss, _ = model.calculate_hierarchical_loss(imp_chunk, None)
@@ -2263,7 +2222,7 @@ def train_hyperbolic_retrieval_model_old(
             label_reg, instance_reg = model.calculate_reg_loss(encoded_figures)
             reg_loss = label_reg + instance_reg
 
-            # --- Retrieval Loss ---
+            # Retrieval Loss 
             # Get corresponding label embeddings
             pos_label_emb = model.label_emb[batch_pos_pat]
             neg_label_emb = model.label_emb[batch_neg_pat]
@@ -2272,16 +2231,16 @@ def train_hyperbolic_retrieval_model_old(
                 encoded_figures, pos_label_emb, neg_label_emb, model.k
             )
 
-            # --- Total Loss ---
+            # Total Loss 
             total_loss = (
                 retrieval_loss
                 + constraint_penalty * hierarchical_loss
                 + reg_penalty * reg_loss
             )
 
-            # --- Backward and Optimize ---
+       
             total_loss.backward()
-            # Optional: Gradient clipping
+         
             # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
@@ -2300,15 +2259,12 @@ def train_hyperbolic_retrieval_model_old(
         avg_hier_loss = epoch_hier_loss / batch_count if batch_count > 0 else 0
         print(f"Epoch {epoch} Summary - Avg Loss: {avg_loss:.4f}, Avg Retrieval: {avg_retr_loss:.4f}, Avg Hier: {avg_hier_loss:.4f}")
 
-        # --- Validation ---
+        # Validation 
         model.eval()
         val_map = evaluate_retrieval(model, X_figures_tensor, val_indices, figure_to_pos_patent, label_offsets, device, batch_size=batch_size*2) # Larger batch size for eval
         print(f"Epoch {epoch}, Validation mAP: {val_map:.4f}")
 
-        # Early stopping based on validation loss (or mAP)
-        # Using loss for early stopping
-        # early_stopping(avg_loss, model) # Or use a validation loss if calculated separately
-        # Using mAP for saving best model (higher is better)
+       
         if val_map > best_val_map:
             best_val_map = val_map
             print(f"New best validation mAP: {best_val_map:.4f}. Saving model...")
@@ -2332,340 +2288,6 @@ def train_hyperbolic_retrieval_model_old(
 
     return model, test_map
 
-def multi_positive_contrastive_loss_old(features, n,device,temperature=0.14, image_paths=None):
-    """
-    Implementation to exactly match MultiPositiveContrastiveLoss with alpha=0
-    """
-    # Normalize features
-    features = F.normalize(features, p=2, dim=1)
-    
-    # Compute logits
-    logits = torch.matmul(features, features.T) / temperature
-    
-    # Create ground truth distribution p
-    labels = torch.arange(len(features), device=device) % (len(features) // 2)  # Match exactly
-    p = (labels.view(-1, 1) == labels.view(1, -1)).float()
-    
-    # Self-masking: remove self-connections
-    mask = torch.eye(len(features), device=device)
-    p.masked_fill_(mask.bool(), 0)
-    logits.masked_fill_(mask.bool(), -1e9)
-    
-    # Normalize p exactly as in second code
-    p = p / p.sum(dim=1, keepdim=True)
-    
-    # Compute q (contrastive distribution)
-    q = F.softmax(logits, dim=1)
-    
-    # Compute cross-entropy loss
-    loss_row = -(p * torch.log(q + 1e-7)).sum(dim=1).mean()
-    loss_col = -(p.t() * torch.log(q.t() + 1e-7)).sum(dim=1).mean()
-
-    cross_loss = (loss_row + loss_col) / 2
-    
-    return cross_loss
-
-def multi_positive_contrastive_loss(features, n,device, temperature, image_paths=None):
-        """
-        Enhanced contrastive loss with better numerical stability and hard negative mining
-        """
-        # Normalize features
-        features = F.normalize(features, p=2, dim=1)
-        
-        # Compute similarity matrix
-        logits = torch.matmul(features, features.T) / temperature
-        
-        # Create ground truth distribution
-        labels = torch.arange(len(features), device=device) % (len(features) // 2)
-        p = (labels.view(-1, 1) == labels.view(1, -1)).float()
-        
-        # Self-masking: remove self-connections
-        mask = torch.eye(len(features), device=device)
-        p.masked_fill_(mask.bool(), 0)
-        logits.masked_fill_(mask.bool(), -float('inf'))  # Use -inf for better numerical stability
-        
-        # Normalize p
-        p = p / (p.sum(dim=1, keepdim=True) + 1e-8)
-        
-        # Apply temperature scaling to logits
-        logits_scaled = logits / temperature
-        
-        # Compute q (contrastive distribution) with more stable softmax
-        q = F.softmax(logits_scaled, dim=1)
-        
-        # Compute cross-entropy loss with hard negative mining
-        # Weight the loss more for the hardest negatives (highest logits)
-        neg_mask = 1.0 - p - mask
-        neg_logits = logits * neg_mask
-        hardest_negatives = torch.topk(neg_logits, k=min(3, logits.size(1)-2), dim=1).values
-        hard_neg_weight = F.softmax(hardest_negatives, dim=1)
-        
-        # Compute standard InfoNCE loss
-        loss_row = -(p * torch.log(q + 1e-7)).sum(dim=1).mean()
-        loss_col = -(p.t() * torch.log(q.t() + 1e-7)).sum(dim=1).mean()
-        
-        return (loss_row + loss_col) / 2
-
-def validate(clip_model, val_dataloader, device, temperature):
-    """Validate the CLIP model on the validation set"""
-    clip_model.eval()
-    total_val_loss = 0.0
-    batch_count = 0
-    
-    with torch.no_grad():
-        for batch in tqdm(val_dataloader, desc="Validating"):
-            if batch is None:
-                continue
-            
-            anchors, positives = batch
-            images = torch.cat([anchors, positives], dim=0)
-            images = images.view(-1, 3, 224, 224).to(device)
-            n = anchors.shape[0]
-            
-            # Get features for all images
-            val_features = clip_model.get_image_features(pixel_values=images)
-            
-            val_loss = multi_positive_contrastive_loss(val_features, n, device, temperature)
-            
-            total_val_loss += val_loss.item()
-            batch_count += 1
-    
-    return total_val_loss / batch_count 
-    
-    return avg_loss
-
-def train_end_to_end(
-    clip_model,
-    hyperbolic_model,
-    train_dataloader,
-    val_dataloader,
-    epochs=10,
-    clip_lr=2e-5,  # Changed to match second code
-    hyperbolic_lr=1e-3,
-    temperature=0.14,  # Changed to match 0.14 in second code
-    device=None,
-    save_dir="models_storage/",
-    patience=5,
-    clip_finetune=True,
-    clip_weight=1.0,
-    hyperbolic_weight=0.0,  # Set to zero to disable hyperbolic loss
-    use_wandb=True,
-    wandb_project="hyperbolic-clip-end2end",
-    wandb_run_name=None,
-    max_grad_norm=1.0
-):
-    """
-    End-to-end training of CLIP model with a more sophisticated contrastive loss
-    similar to MultiPositiveContrastiveLoss without graph alignment
-    """
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Move models to device
-    clip_model = clip_model.to(device)
-    hyperbolic_model = hyperbolic_model.to(device)
-    
-    # Freeze base model first
-    for param in clip_model.parameters():
-        param.requires_grad = False
-
-    # Freeze text model completely (ensuring it stays frozen)
-    if hasattr(clip_model, 'text_model'):
-        for param in clip_model.text_model.parameters():
-            param.requires_grad = False
-
-    # Unfreeze specific layers of vision encoder, keeping first 3 frozen
-    if hasattr(clip_model, 'vision_model') and hasattr(clip_model.vision_model, 'encoder'):
-        # Assuming layers are in a ModuleList or similar indexable structure
-        # Keep first 3 layers frozen, unfreeze the rest
-        num_layers = len(clip_model.vision_model.encoder.layers)
-        
-        # Only unfreeze layers after the first 3
-        for i in range(3, num_layers):
-            for param in clip_model.vision_model.encoder.layers[i].parameters():
-                param.requires_grad = True
-    
-    # Alternative way if the above doesn't work with your model structure
-    # for i, layer in enumerate(clip_model.vision_model.encoder.layers):
-    #     if i >= 3:  # Skip the first 3 layers (0, 1, 2)
-    #         for param in layer.parameters():
-    #             param.requires_grad = True
-
-    hyperbolic_model.k = hyperbolic_model.k.to(device)
-
-    # Create save directory if it doesn't exist
-    os.makedirs(save_dir, exist_ok=True)
-
-    # Initialize Weights & Biases with configuration similar to second code
-    if use_wandb:
-        import wandb
-        config = {
-            "learning_rate": clip_lr,  # Match second code naming
-            "batch_size": train_dataloader.batch_size if hasattr(train_dataloader, 'batch_size') else None,
-            "temperature": temperature,
-            "architecture": "CLIP",
-            "training": "CLIP-only",  # Since hyperbolic_weight=0
-            "epochs": epochs
-        }
-        wandb.init(project=wandb_project, name=wandb_run_name, config=config)
-        #wandb.watch(filter(lambda p: p.requires_grad, clip_model.parameters()))
-
-
-    # Set up optimizer like second code
-    if clip_finetune:
-        clip_optimizer = torch.optim.AdamW(
-            filter(lambda p: p.requires_grad, clip_model.parameters()),
-            lr=clip_lr,
-            weight_decay=0.1  # Added weight decay like second code
-        )
-    
-    # Set up early stopping
-    best_val_loss = float("inf")
-    patience_counter = 0
-    step = 0  # For logging like in second code
-
-
-    # Training loop
-    for epoch in range(1, epochs + 1):
-        # --- Training ---
-        clip_model.train() if clip_finetune else clip_model.eval()
-        
-        total_loss = 0.0
-        batch_count = 0
-        
-        for batch in tqdm(train_dataloader, desc=f"Epoch {epoch}/{epochs} Training"):
-            if batch is None:
-                continue
-            
-            
-            # Maybe print a few sample values to verify content
-            anchors, positives = batch
-            images = torch.cat([anchors, positives], dim=0)
-            images = images.view(-1, 3, 224, 224).to(device)
-            n = anchors.shape[0]
-            
-            
-            # Split into anchors and positives
-            #anchor_images = torch.tensor(images[0])
-            #positive_images = torch.tensor(images[1])
-            
-            # Zero the gradients
-            if clip_finetune:
-                clip_optimizer.zero_grad()
-            
-            # --- Forward pass through CLIP ---
-            # Get CLIP image features
-           
-            clip_features = clip_model.get_image_features(pixel_values=images)
-            
-            # Compute advanced contrastive loss (similar to second code)
-            loss = multi_positive_contrastive_loss(clip_features, n, device, temperature)
-            
-            # Backward and optimize
-            loss.backward()
-            if clip_finetune:
-                # Perform optimizer step
-                clip_optimizer.step()
-            
-            
-            # Track losses
-            total_loss += loss.item()
-            batch_count += 1
-            
-            # Log batch metrics to W&B similar to second code
-            if use_wandb and batch_count % 20 == 0:
-                step += 20
-                wandb.log({
-                    "train/loss": loss.item(),
-                    "train/cross_entropy_loss": loss.item(),
-                }, step=step, commit=True)
-            
-            # Print progress
-            if batch_count % 50 == 0:
-                print(f"Epoch {epoch}/{epochs}, Batch {batch_count}, Loss: {loss.item():.4f}")
-            
-            # Run validation periodically like in second code
-            if batch_count % 60 == 0:
-
-                val_loss = validate(clip_model, val_dataloader, device, temperature)
-                
-                # Log validation metrics
-                if use_wandb:
-                    wandb.log({
-                        "val/loss": val_loss,
-                        "val/cross_entropy_loss": val_loss,
-                        "epoch": epoch
-                    }, commit=True)
-                
-                print(f"Epoch {epoch}/{epochs}, Train Loss: {total_loss/batch_count:.4f}, Val Loss: {val_loss:.4f}")
-                
-                # Save best model
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    print(f"New best model found with validation loss: {best_val_loss:.4f}")
-                    
-                    # Save CLIP model
-                    if clip_finetune:
-                        clip_save_path = os.path.join(save_dir, "clip_model_best_2.pt")
-                        torch.save(clip_model.state_dict(), clip_save_path)
-                        
-                        if use_wandb:
-                            wandb.save(clip_save_path)
-                    
-                    # Save model info
-                    best_model_info = {
-                        "epoch": epoch,
-                        "batch": batch_count,
-                        "val_loss": best_val_loss
-                    }
-                    
-                    # Save as JSON like in second code
-                    with open(os.path.join(save_dir, f"{wandb_run_name or 'clip_model'}_best_2_info.json"), 'w') as f:
-                        json.dump(best_model_info, f, indent=4)
-        
-        # Calculate average loss
-        avg_loss = total_loss / batch_count if batch_count > 0 else 0
-        
-        print(f"Epoch {epoch}/{epochs} Training - Avg Loss: {avg_loss:.4f}")
-        
-        # Full validation at the end of each epoch
-        val_loss = validate(clip_model, val_dataloader, device, temperature)
-        
-        # Log epoch metrics to W&B
-        if use_wandb:
-            wandb.log({
-                "epoch": epoch,
-                "train_loss": avg_loss,
-                "val_loss": val_loss,
-                "learning_rate": clip_lr if clip_finetune else 0
-            })
-        
-        # Save models and check for early stopping
-        if val_loss < best_val_loss:
-            print(f"New best validation loss at end of epoch: {val_loss:.4f}. Saving model...")
-            
-            # Save CLIP model
-            if clip_finetune:
-                clip_save_path = os.path.join(save_dir, f"{wandb_run_name or 'clip_model'}_best_2.pt")
-                torch.save(clip_model.state_dict(), clip_save_path)
-                
-                
-            
-            best_val_loss = val_loss
-            patience_counter = 0
-        else:
-            patience_counter += 1
-            print(f"EarlyStopping counter: {patience_counter} out of {patience}")
-            if patience_counter >= patience:
-                print("Early stopping triggered.")
-                break
-
-    
-    
-    
-
-    return clip_model, hyperbolic_model
-    
 def hyperbolic_contrastive_loss(anchor_embeddings, positive_embeddings, k, temperature=0.07):
     """
     Compute hyperbolic contrastive loss (InfoNCE/NT-Xent) in hyperbolic space.
@@ -2772,7 +2394,7 @@ def create_batch_with_figure_pairs(
             pos_fig_pairs.append((fig_idx, pos_peer))
             neg_fig_pairs.append((fig_idx, neg_peer))
 
-        # Convert lists → tensors
+        
         pos_patents   = torch.tensor(pos_patents,   dtype=torch.long, device=device)
         neg_patents   = torch.tensor(neg_patents,   dtype=torch.long, device=device)
         pos_fig_pairs = torch.tensor(pos_fig_pairs, dtype=torch.long, device=device)
@@ -2877,18 +2499,15 @@ def train_end_to_end_old(
     num_labels = hyperbolic_model.label_emb.shape[0]
     print(f"Model label_emb size (LABEL_NUM): {num_labels}")
     print(f"Model num_figures size : {num_figures}")
-    # --- ---
-
-    # --- Calculate num_patents correctly (using absolute offsets for slicing later) 
+   
     patent_start_idx_abs = label_offsets['patents']  # Absolute start index
     patent_end_idx_abs = num_labels + patent_start_idx_abs  # Default if no subsequent offset
     if 'medium_cpcs' in label_offsets:
         patent_end_idx_abs = label_offsets['medium_cpcs']
-    # ... (add other elif checks if needed) ...
     num_patents = patent_end_idx_abs - patent_start_idx_abs
     print(f"Derived num_patents: {num_patents} (Absolute index range {patent_start_idx_abs} to {patent_end_idx_abs-1})")
     
-    # --- Process figure-to-figure pairs ---
+    # Process figure-to-figure pairs 
     has_figure_pairs = (positive_figure_pairs is not None and len(positive_figure_pairs) > 0) and \
                        (negative_figure_pairs is not None and len(negative_figure_pairs) > 0)
     
@@ -2938,21 +2557,10 @@ def train_end_to_end_old(
         figure_to_neg_figures = {}
 
 
-    # ... (constraint tensor creation and chunking - uses relative indices now) ...
-    # Ensure implication/exclusion tensors loaded from npz also use relative indices
+
     implication_tensor = torch.tensor(implication, dtype=torch.long, device=device) if implication else torch.empty((0, 2), dtype=torch.long, device=device)
     exclusion_tensor = torch.tensor(exclusion, dtype=torch.long, device=device) if exclusion else torch.empty((0, 2), dtype=torch.long, device=device)
-    # --- Add validation for implication/exclusion relative indices ---
-    if implication_tensor.numel() > 0:
-        min_imp_idx = implication_tensor.min()
-        max_imp_idx = implication_tensor.max()
-        print(f"Validation: Implication indices range [{min_imp_idx.item()}, {max_imp_idx.item()}] vs Label Num {num_labels}")
-        if min_imp_idx < 0 or max_imp_idx >= num_labels:
-             print("ERROR: Invalid relative indices found in implication data!")
-             # Handle error
-    # --- ---
 
-    # --- Prepare positive and negative pairs with CORRECTED VALIDATION ---
     figure_to_pos_patent = {}
     figure_to_neg_patents = {}
     all_figure_indices_with_pairs = set()
@@ -2970,20 +2578,16 @@ def train_end_to_end_old(
         if not (0 <= fig_idx < num_figures):
             pos_pairs_skipped_fig_idx += 1
             continue
-        # --- CORRECTED CHECK for relative patent index ---
-        # Check if patent_idx_relative is within the valid range [0, num_labels - 1]
+
         if not (0 <= patent_idx_relative < num_labels):
             print(f"Warning: Invalid relative patent index {patent_idx_relative} (range 0-{num_labels-1}) found in Y_pos for figure {fig_idx}. Skipping.")
             pos_pairs_skipped_pat_idx += 1
             continue
-        # --- Optional: Check if it falls within the expected patent sub-range ---
-        # This requires knowing the relative start/end for patents
+
         patent_start_idx_rel = 0  # Patents are the first labels
         patent_end_idx_rel = num_patents
         if not (patent_start_idx_rel <= patent_idx_relative < patent_end_idx_rel):
              print(f"Note: Y_pos relative patent index {patent_idx_relative} is outside expected patent range [0-{patent_end_idx_rel-1}] but within label range [0-{num_labels-1}]. Accepting.")
-             # Decide if this is acceptable or an error
-        # --- ---
 
         figure_to_pos_patent[fig_idx] = patent_idx_relative  # Store relative index
         all_figure_indices_with_pairs.add(fig_idx)
@@ -2996,23 +2600,7 @@ def train_end_to_end_old(
     for fig_idx, patent_idx_relative in Y_neg:  # patent_idx_relative is now 0-based
         neg_pairs_processed += 1
         # Check figure index
-        if not (0 <= fig_idx < num_figures):
-            neg_pairs_skipped_fig_idx += 1
-            continue
-        # --- CORRECTED CHECK for relative patent index ---
-        # Check if patent_idx_relative is within the valid range [0, num_labels - 1]
-        if not (0 <= patent_idx_relative < num_labels):
-            print(f"Warning: Invalid relative patent index {patent_idx_relative} (range 0-{num_labels-1}) found in Y_neg for figure {fig_idx}. Skipping.")
-            neg_pairs_skipped_pat_idx += 1
-            continue
-        # --- Optional: Check if it falls within the expected patent sub-range ---
-        patent_start_idx_rel = 0
-        patent_end_idx_rel = num_patents
-        if not (patent_start_idx_rel <= patent_idx_relative < patent_end_idx_rel):
-             print(f"Note: Y_neg relative patent index {patent_idx_relative} is outside expected patent range [0-{patent_end_idx_rel-1}] but within label range [0-{num_labels-1}]. Accepting.")
-             # Decide if this is acceptable or an error
-        # --- ---
-
+   
         if fig_idx not in figure_to_neg_patents:
             figure_to_neg_patents[fig_idx] = []
         figure_to_neg_patents[fig_idx].append(patent_idx_relative)  # Store relative index
@@ -3847,13 +3435,7 @@ def calculate_hyperbolic_distances(model, X_figures_tensor, Y_pos, label_offsets
     for fig_idx, patent_idx in Y_pos:
         figure_to_patent[fig_idx] = patent_idx
     
-    # Create patent-to-CPC mappings (simplified approach using implication data if available)
-    # For this example, we'll use a simplified approach where we assume:
-    # 1. Each patent is associated with the first Medium CPC
-    # 2. Each Medium CPC is associated with the first Big CPC
-    # 3. Each Big CPC is associated with the first Main CPC
-    # In a real implementation, you would use the actual hierarchy from your data
-    
+
     # Create mapping dictionaries
     patent_to_medium = defaultdict(lambda: medium_start_idx)  # Default to first Medium CPC
     medium_to_big = defaultdict(lambda: big_start_idx)        # Default to first Big CPC
@@ -4252,9 +3834,7 @@ def main():
             X,
             A_tilde_train,
         )=load_patent_graph("../data/2018/graph")
-        # Extract hierarchical and neighborhood relationships
-        # You'll need to implement these functions based on your graph structure
-        # Load the figure pair connections
+   
         X, A_tilde_train = load_patent_graph("../data/2018/graph")
         X              = X.float().to()
         A_tilde_train  = A_tilde_train.float().to(device)
@@ -5010,115 +4590,6 @@ def main():
         print("Training complete!")
         
 
-    elif args.action == "train_end_full":
-        import os
-        # Configuration
-        CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"  # or path to fine-tuned model
-        FEATURE_DIM = 512  # CLIP feature dimension
-        HYPERBOLIC_EMBED_DIM = 256  # Hyperbolic embedding dimension
-        HYPERBOLIC_HIDDEN_DIMS = [256, 128]  # Hidden dimensions for hyperbolic encoder
-        HYPERBOLIC_CURVATURE = 0.5  # Curvature of hyperbolic space
-        
-        BATCH_SIZE = 128  # Batch size (number of pairs * 2)
-        EPOCHS = 50
-        CLIP_LR = 1e-4
-        HYPERBOLIC_LR = 1e-3
-        TEMPERATURE = 0.07
-        PATIENCE = 5
-        
-        CLIP_FINETUNE = True  # Whether to fine-tune CLIP
-        CLIP_WEIGHT = 2.0  # Weight for CLIP loss
-        HYPERBOLIC_WEIGHT = 1.0  # Weight for hyperbolic loss
-        
-        # Directories
-        DATA_DIR = "../data/2018/"
-        IMAGE_DIR = os.path.join(DATA_DIR, "test_query")
-        SAVE_DIR = "models_storage/hyper/joint_clip_hyperbolic"
-        
-        # Set device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {device}")
-        
-        # Load figure-to-positive-figures mapping
-        # This should be a dictionary mapping figure names to lists of positive figure names
-        # Example: {"figure1.jpg": ["figure2.jpg", "figure3.jpg"], ...}
-        # You'll need to load this from your data
-        
-        
-        with open('../data/2018/ground_truth_2018_cpc.json', 'rb') as f:
-            figure_to_pos_figures = json.load(f)
-        #print(figure_to_pos_figures)
-        # Get image paths
-        image_paths = []
-        for root, _, files in os.walk(IMAGE_DIR):
-            for file in files:
-                if file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp')):
-                    image_paths.append(os.path.join(root, file))
-        
-        print(f"Found {len(image_paths)} images")
-        #image_paths = image_paths[:]
-        # Create transform
-        transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.Normalize(
-                mean=[0.48145466, 0.4578275, 0.40821073],
-                std=[0.26862954, 0.26130258, 0.27577711]
-            )
-        ])
-        
-        # Create dataset
-        dataset = ImagePairDataset(image_paths, figure_to_pos_figures, transform)
-        
-    
-        
-        # 1. Build the complete data pipeline
-        data = build_complete_data_pipeline(
-            adjacency_matrix_path="../data/label_adjacency_matrix.csv",
-            image_folder=IMAGE_DIR,
-            label_mapping_path="../data/label_names.csv",
-            output_dir="data/mappings"
-        )
-
-        # 2. Prepare data for training
-        train_dataloader, val_dataloader = prepare_data_for_enhanced_training(
-            image_paths=data['image_paths'],
-            figure_to_pos_figures=data['figure_to_pos_figures'],
-            figure_to_patent=data['figure_to_patent'],
-            patent_to_label=data['patent_to_label'],
-            implication_pairs=data['implication_pairs'],
-            batch_size=32,
-            val_split=0.1
-        )
-
-        # 3. Initialize models
-        clip_model = CLIPModel.from_pretrained(CLIP_MODEL_NAME)
-        hyperbolic_model = HyperbolicEmbeddingModel(
-            feature_num=512,  # CLIP feature dimension
-            embed_dim=256,     # Hyperbolic embedding dimension
-            label_num=data['num_labels'],
-            hidden_dims=[256, 128],
-            c=1.0             
-        )
-
-        # 4. Train models
-        clip_model, hyperbolic_model = train_end_to_end_with_hierarchical_model(
-            clip_model=clip_model,
-            hyperbolic_model=hyperbolic_model,
-            train_dataloader=train_dataloader,
-            val_dataloader=val_dataloader,
-            implication_pairs=data['implication_pairs'],
-            epochs=20,
-            clip_lr=1e-3,
-            hyperbolic_lr=1e-3,
-            clip_weight=1.0,
-            hyperbolic_weight=1.0,
-            retrieval_weight=0.5,
-            hierarchical_weight=0.3,
-            figure_pair_weight=0.5,
-            reg_weight=0.1
-        )
-        
-        print("Training complete!")
         
     
     elif args.action == "plot":
@@ -5140,7 +4611,7 @@ def main():
         print(f"Using device: {device}")
         print(f"Plot labels only: {PLOT_LABELS_ONLY}")
 
-        # --- 1. Load Preprocessed Data ---
+    
         npz_path = os.path.join(data_dir, 'training_data.npz')
         json_path = os.path.join(data_dir, 'label_offsets.json')
 
@@ -5160,11 +4631,9 @@ def main():
             print(f"Error loading data: {e}")
             exit()
 
-        # --- 2. Define Model Hyperparameters (MUST match training) ---
+       
         FEATURE_DIM = X_figures_loaded.shape[1]
         
-
-        # Calculate LABEL_NUM and individual counts robustly from offsets
         num_patents = 0
         num_medium_cpcs = 0
         num_big_cpcs = 0
@@ -5193,10 +4662,7 @@ def main():
                                 num_big_cpcs = big_end_abs - big_start_abs
                                 if 'main_cpcs' in label_offsets_loaded:
                                     main_start_abs = label_offsets_loaded['main_cpcs']
-                                    # Assume main is last, need total node count from original data prep
-                                    # Or assume count from logs (e.g., 9)
-                                    num_main_cpcs = 9 # Hardcoding based on previous logs - **Replace if incorrect**
-                                    # Ideally, total label count should be saved/calculated reliably
+                                    num_main_cpcs = 9
         LABEL_NUM = num_patents + num_medium_cpcs + num_big_cpcs + num_main_cpcs
         if LABEL_NUM <= 0:
             # Fallback if calculation failed
@@ -5210,7 +4676,7 @@ def main():
         print(f"Using Model Params: Feature Dim={FEATURE_DIM}, Embed Dim={EMBED_DIM}, Label Num={LABEL_NUM}, Curvature={CURVATURE_C}")
         print(f"Label Counts: Pat={num_patents}, Med={num_medium_cpcs}, Big={num_big_cpcs}, Main={num_main_cpcs}")
 
-        # --- 3. Instantiate and Load Model ---
+        #  Instantiate and Load Model 
         print("Instantiating model...")
         model = HyperbolicEmbeddingModel(
             feature_num=FEATURE_DIM,
@@ -5233,10 +4699,9 @@ def main():
             print("Ensure the model architecture definition matches the saved checkpoint.")
             exit()
 
-        # --- 4. Calculate Embeddings ---
+        #  Calculate Embeddings 
         print("Calculating embeddings...")
         with torch.no_grad():
-            # Figure Embeddings (only needed if PLOT_LABELS_ONLY is False)
             figure_embeddings_np = None
             if not PLOT_LABELS_ONLY:
                 X_figures_tensor = torch.tensor(X_figures_loaded, dtype=torch.float32).to(device)
@@ -5256,7 +4721,7 @@ def main():
                 # Adjust counts if needed
                 LABEL_NUM = label_embeddings_np.shape[0]
 
-        # --- 5. Analyze Hyperbolic Distances ---
+        # Analyze Hyperbolic Distances 
         print("Analyzing hyperbolic distances from origin (dist0)...")
         with torch.no_grad():
             # Calculate dist0 for all labels
@@ -5297,7 +4762,7 @@ def main():
             plt.savefig('dist0_distributions.png', dpi=300)
             print("Saved dist0 distribution plot as dist0_distributions.png")
 
-        # --- 6. Combine Embeddings and Create Metadata ---
+        # Combine Embeddings and Create Metadata
         print("Preparing data for t-SNE visualization...")
         if PLOT_LABELS_ONLY:
             # Only use label embeddings
@@ -5337,18 +4802,17 @@ def main():
         else:
             print(f"  Prepared metadata for {len(metadata)} points.")
 
-        # --- 7. Run t-SNE and Plot ---
+        # Run t-SNE and Plot 
         plot_embeddings_tsne_enhanced(combined_embeddings, metadata, title=title, perplexity=perplexity)
 
-        # --- 8. Plot Sub-Hierarchy Example (if not PLOT_LABELS_ONLY) ---
+        #  Plot Sub-Hierarchy Example (if not PLOT_LABELS_ONLY)
         if not PLOT_LABELS_ONLY and num_main_cpcs > 0 and num_big_cpcs > 0:
             print("\nCreating sub-hierarchy visualization...")
             try:
                 # Select one Main CPC and its related hierarchy
                 main_cpc_idx = main_start_idx  # First Main CPC
                 
-                # Find related Big CPCs (simplified approach - in reality would need actual hierarchy data)
-                # For demonstration, let's take first few Big CPCs
+                
                 related_big_cpcs = list(range(big_start_idx, min(big_start_idx + 5, big_end_idx)))
                 
                 # Find related Medium CPCs

@@ -40,7 +40,7 @@ def visualize_patent_embeddings(model_path, X, A_tilde, patent_indices, output_d
             Z, _, mu, _ = model(X, A_tilde)
             embeddings = mu.cpu().numpy()
         
-        # Apply t-SNE to reduce dimensionality for visualization
+        
         print(f"🔄 Applying t-SNE with perplexity={perplexity}...")
         tsne = TSNE(n_components=n_components, perplexity=perplexity, random_state=random_state)
         embeddings_2d = tsne.fit_transform(embeddings)

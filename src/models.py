@@ -13,7 +13,7 @@ from transformers import CLIPModel, CLIPProcessor
 torch.manual_seed(42)
 # Constants
 MIN_NORM = 1e-15
-DROPOUT_RATE = 0.1 # Use a constant name
+DROPOUT_RATE = 0.1 
 
 class ImagePairDataset(Dataset):
     """Dataset for loading image pairs with positive/negative relationships"""
@@ -88,7 +88,7 @@ class ImagePairDataset(Dataset):
         elif image.shape[0] == 4:
             image = image[:3]
             
-        # Apply transforms if provided
+        
         if self.transform:
             image = self.transform(image)
             
@@ -207,51 +207,49 @@ class InferenceModel(nn.Module):
         self.layers = nn.ModuleList()
         self.bns    = nn.ModuleList()
 
-        # ---- input layer ----
+        #  input layer 
         self.layers.append(GCNLayer(input_dim, hidden_dim))
         self.bns.append(nn.BatchNorm1d(hidden_dim))
 
-        # ---- hidden layers ----
+        #  hidden layers 
         for _ in range(num_layers - 3):
             self.layers.append(GCNLayer(hidden_dim, hidden_dim))
             self.bns.append(nn.BatchNorm1d(hidden_dim))
 
-        # ---- output layer ----
+        #  output layer 
         self.layers.append(GCNLayer(hidden_dim, latent_dim))
 
-    # ------------------------------------------------------------------
+   
     def forward(self, X, A_tilde):
         """
         X           : [N, input_dim]  (float32)
         A_tilde     : [N, N]          (float32 row-normalised adj)
         """
-        # ‼️ guarantee float32 everywhere
+       
         X = X.float()
         A = A_tilde.float()
 
-        # (optional) row normalisation on the fly
+        
         A = A / (A.sum(dim=1, keepdim=True) + 1e-8)
 
-        # ---- first layer ----
+        #  first layer 
         H = F.relu(self.bns[0](self.layers[0](X, A)))
 
-        # ---- residual hidden layers ----
+        #  residual hidden layers 
         for i in range(1, len(self.layers) - 1):
             H_new = F.relu(self.bns[i](self.layers[i](H, A)))
             H     = H + H_new
 
-        # ---- output layer ----
+        #  output layer 
         Z = self.layers[-1](H, A)
         return Z
 
-# Set default dtype for numerical stability
+
 default_dtype = torch.float64
 torch.set_default_dtype(default_dtype)
 
 
-# Constants
-MIN_NORM = 1e-15
-dropout = 0.1
+
 
 # Mobius Linear Layer for hyperbolic space operations
 class MobiusLinear(nn.Linear):
@@ -535,8 +533,7 @@ class HyperbolicEmbeddingModel(nn.Module):
             c=c,
             dropout_rate=DROPOUT_RATE
         )
-        # Add more layers if needed, e.g., Mobius non-linearity + another MobiusLinear
-
+        
     def encode_figures(self, features):
         """ Encodes Euclidean figure features into the hyperbolic space. """
         # Apply dropout to input features
@@ -544,14 +541,8 @@ class HyperbolicEmbeddingModel(nn.Module):
         features = torch.tensor(features, dtype=torch.float32)
         features = F.dropout(features, p=DROPOUT_RATE, training=self.training)
 
-        # Option 1: Simple Linear + ExpMap
-        # tangent_vector = self.encoder(features)
-        # encoded = pmath.expmap0(tangent_vector, k=self.k)
-        # encoded = self.ball.projx(encoded) # Ensure projection
-
-        # Option 2: Using MobiusLinear with hyperbolic_input=False
         encoded = self.encoder(features)
-        # MobiusLinear already includes projection
+        
 
         self.ball.assert_check_point_on_manifold(encoded)
         return encoded
@@ -591,27 +582,22 @@ class HyperbolicEmbeddingModel(nn.Module):
             sub_label_emb = self.label_emb[sub_label_idx]
             par_label_emb = self.label_emb[par_label_idx]
 
-            # Let's use a simpler distance constraint for now: d(sub, origin) < d(par, origin)
-            # Or use the original HMI insideness if preferred, but ensure it's differentiable and stable
-            # Using distance to origin as a proxy:
+            #
             dist_sub_origin = pmath.dist0(sub_label_emb, k=self.k)
             dist_par_origin = pmath.dist0(par_label_emb, k=self.k)
             # Margin loss: encourage dist_sub > dist_par (closer to boundary) - adjust if needed
-            # inside_loss = F.relu(dist_par_origin - dist_sub_origin + 0.1).mean() # Example margin
 
-            # Using original HMI insideness (ensure stability)
             insideness_val = self._hmi_insideness(sub_label_emb, par_label_emb)
             inside_loss = F.relu(-insideness_val + 0.05).mean() # Margin: insideness > 0.05
 
-        # Exclusion Loss (Labels should be 'disjoint')
+        # Exclusion Loss 
         if exclusion_pairs is not None and exclusion_pairs.numel() > 0:
             if exclusion_pairs.dim() == 1: exclusion_pairs = exclusion_pairs.view(-1, 2)
             left_label_idx = exclusion_pairs[:, 0]
             right_label_idx = exclusion_pairs[:, 1]
             left_label_emb = self.label_emb[left_label_idx]
             right_label_emb = self.label_emb[right_label_idx]
-            # Use a margin-based loss: encourage disjointedness > margin
-            # Using original HMI disjointedness (ensure stability)
+           
             disjointedness_val = self._hmi_disjointedness(left_label_emb, right_label_emb)
             disjoint_loss = F.relu(-disjointedness_val + 0.1).mean() # Margin: disjointedness > 0.1
 
@@ -791,7 +777,7 @@ class HyperbolicEmbeddingModel(nn.Module):
         encoded_figures = self.encode_figures(figure_features)
         #pair_loss = self.calculate_pair_loss(encoded_figures, positive_pairs, negative_pairs)
         
-        # Calculate other losses
+        
         #inside_loss, disjoint_loss = self.calculate_hierarchical_loss(implication_pairs, exclusion_pairs)
         #label_reg, instance_reg = self.calculate_reg_loss(encoded_figures)
 
@@ -915,11 +901,8 @@ class VGAE(nn.Module):
         A_reconstructed = torch.sigmoid(torch.matmul(Z, Z.T))
         
         return Z, A_reconstructed
+    
 class EnhancedHyperbolicDataset(torch.utils.data.Dataset):
-    """
-    Dataset for training with multiple hyperbolic losses.
-    Handles image pairs, patent labels, and figure pairs.
-    """
     def __init__(
         self, 
         image_paths, 
@@ -970,11 +953,11 @@ class EnhancedHyperbolicDataset(torch.utils.data.Dataset):
                         if figures[i] in self.path_to_idx and figures[j] in self.path_to_idx:
                             self.pos_fig_pairs.append((self.path_to_idx[figures[i]], self.path_to_idx[figures[j]]))
         
-        # Create negative figure pairs (different patents, different labels)
+       
         patent_groups = list(self.group_figures_by_patent().items())
         if len(patent_groups) >= 2:
-            # Sample some negative pairs (not exhaustive to avoid too many pairs)
-            num_neg_pairs = min(len(self.pos_fig_pairs) * 3, 10000)  # Cap at reasonable number
+           
+            num_neg_pairs = min(len(self.pos_fig_pairs) * 3, 10000)  
             
             for _ in range(num_neg_pairs):
                 # Pick two different patents
@@ -1108,7 +1091,7 @@ class EnhancedHyperbolicDataset(torch.utils.data.Dataset):
         
         return {
             'images': torch.stack([anchor_img, pos_img]),
-            'n': 1,  # Number of pairs (always 1 in this case)
+            'n': 1,  # Number of pairs 
             'pos_patents': torch.tensor([anchor_label]) if anchor_label is not None else None,
             'neg_patents': torch.tensor([neg_label]) if neg_label is not None else None,
             'pos_fig_pairs': batch_pos_fig_pairs,
@@ -1141,15 +1124,11 @@ def collate_enhanced_batch(batch):
     
     # Adjust indices for the batch
     if pos_fig_pairs:
-        # Adjust indices to account for batch concatenation
         for i, pairs in enumerate(pos_fig_pairs):
-            pos_fig_pairs[i] = pairs + 2 * i  # Each item adds 2 images (anchor + positive)
-    
+            pos_fig_pairs[i] = pairs + 2 * i  
     if neg_fig_pairs:
-        # Adjust indices to account for batch concatenation
         for i, pairs in enumerate(neg_fig_pairs):
-            neg_fig_pairs[i] = pairs + 2 * i  # Each item adds 2 images (anchor + positive)
-    
+            neg_fig_pairs[i] = pairs + 2 * i  
     pos_fig_pairs = torch.cat(pos_fig_pairs) if pos_fig_pairs else None
     neg_fig_pairs = torch.cat(neg_fig_pairs) if neg_fig_pairs else None
     

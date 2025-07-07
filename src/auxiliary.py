@@ -104,8 +104,7 @@ def enhanced_loss_function(Z, parent_indices, neighbor_indices, epoch, max_epoch
     # Print components for debugging
     print(f"KL Loss: {kl_loss.item():.4f}, Hierarchical Loss: {hierarchical_loss:.4f}, Neighborhood Loss: {neighborhood_loss:.4f}, Beta: {beta:.6f}")
     
-    # Combine all losses with appropriate weights
-    # You can adjust these weights based on the importance of each component
+
     alpha_h = 1.0  # Weight for hierarchical loss
     alpha_n = 1.0  # Weight for neighborhood loss
     
@@ -162,18 +161,7 @@ def neighborhood_contrastive_loss(Z, neighbor_indices, temperature=0.07, eps=1e-
 
     
 def hierarchical_triplet_loss(Z, parent_indices, margin=0.1):
-    """
-    Triplet loss for hierarchical relationships that ensures children are closer
-    to their parents than to other random nodes.
-    
-    Args:
-        Z: Node embeddings tensor
-        parent_indices: Tensor of shape [num_pairs, 2] containing [child, parent] pairs
-        margin: Margin between positive and negative distances
-    
-    Returns:
-        Hierarchical triplet loss
-    """
+ 
     # Normalize embeddings
     Z_norm = F.normalize(Z, p=2, dim=1)
     
@@ -204,7 +192,7 @@ def hierarchical_triplet_loss(Z, parent_indices, margin=0.1):
     
     neg_distances = torch.stack(neg_distances)
     
-    # Compute triplet loss: max(0, pos_distance - neg_distance + margin)
+
     triplet_loss = torch.mean(torch.clamp(pos_distances - neg_distances + margin, min=0))
     
     return triplet_loss
@@ -342,7 +330,7 @@ def evaluate_embeddings(model, X, A_tilde, parent_indices, neighbor_indices):
         print(f"  Average Random Pair Cosine-Sim: {avg_random_similarity:.4f}")
         print(f"  Preservation Ratio: {hier_preservation_ratio:.4f} ")
     
-    # 2. Neighborhood Preservation
+    
     if neighbor_indices is not None and len(neighbor_indices) > 0:
         # Convert to tensor if not already
         if not isinstance(neighbor_indices, torch.Tensor):
@@ -364,8 +352,7 @@ def evaluate_embeddings(model, X, A_tilde, parent_indices, neighbor_indices):
         print(f"  Average Random Pair Cosine-Sim: {avg_random_similarity:.4f}")
         print(f"  Preservation Ratio: {neigh_preservation_ratio:.4f} ")
     
-    # 3. Rank-based Evaluation
-    # For each node, check if its parent/neighbors are among its k-nearest neighbors
+   
     k_values = [1, 5, 10, 20]
     
     # Compute pairwise distances for all nodes
@@ -447,16 +434,7 @@ def training_loss(Z, parent_indices, neighbor_indices, temp=0.1):
     return hierarchical_loss, neighborhood_loss
 
 def extract_parent_child_relationships(A_tilde):
-    """
-    Extract parent-child relationships from the adjacency matrix using vectorized operations.
-    
-    Args:
-        A_tilde: Adjacency matrix (torch.Tensor) of the graph
-        
-    Returns:
-        Tensor of shape [num_pairs, 2] with each row as (child_index, parent_index)
-    """
-    # Define node count and index ranges
+
     num_figures = 22924
     num_patents = 11463
     num_medium_cpc = 566
@@ -501,16 +479,7 @@ import torch
 from collections import defaultdict
 
 def extract_same_cpc_relationships(A_tilde):
-    """
-    Extract pairs of figures that share the same medium CPC code.
-    
-    Args:
-        A_tilde: Adjacency matrix of the graph (torch.Tensor)
-    
-    Returns:
-        Tensor of shape [num_pairs, 2] with each row as (figure_i, figure_j) 
-        where both figures are connected to the same medium CPC code
-    """
+
     # Define node count and index ranges
     num_figures = 22924
     num_patents = 11463
